@@ -189,6 +189,7 @@ class Arb:
     roi: float
     risk_free: bool
     note: str
+    max_baskets: int | None = None  # limited by the thinnest leg's resting size
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -199,6 +200,12 @@ def _leg(q: Quote, side: str, price: float, fee: float) -> dict:
 
 
 def _basket(kind, event, legs_spec, payout, fees: FeeSchedule, n: int, risk_free: bool, note: str) -> Arb | None:
+    sizes = [q.yes_ask_size if side == "yes" else q.no_ask_size for q, side, _ in legs_spec]
+    max_baskets = int(min(sizes)) if sizes and all(s is not None for s in sizes) else None
+    if max_baskets == 0:
+        return None  # nothing resting at these prices
+    # Fees round up per order, so price them at the size that can actually fill.
+    n = min(n, max_baskets) if max_baskets is not None else n
     legs, cost = [], 0.0
     for q, side, price in legs_spec:
         fee = fees.per_contract(n, price, "taker", q.ticker)
@@ -218,7 +225,20 @@ def _basket(kind, event, legs_spec, payout, fees: FeeSchedule, n: int, risk_free
         roi=round(profit / cost, 4),
         risk_free=risk_free,
         note=note,
+        max_baskets=max_baskets,
     )
+
+
+def _ladders(rungs: list[Quote], key: str) -> list[list[Quote]]:
+    """Split strike markets into ladders on the same underlying, sorted by strike.
+
+    One event can hold several ladders (every pitcher's strikeout lines, each team's
+    spread), so rungs are grouped on ``Quote.underlying``.
+    """
+    groups: dict[str, list[Quote]] = {}
+    for q in rungs:
+        groups.setdefault(q.underlying or q.ticker.rsplit("-", 1)[0], []).append(q)
+    return [sorted(g, key=lambda q: float(getattr(q, key))) for g in groups.values()]
 
 
 def find_arbitrage(events: list[Event], fees: FeeSchedule, contracts: int = 100) -> list[Arb]:
@@ -258,9 +278,15 @@ def find_arbitrage(events: list[Event], fees: FeeSchedule, contracts: int = 100)
                     arbs.append(arb)
 
         for kind, key, direction in (("above", "floor_strike", "greater"), ("below", "cap_strike", "less")):
-            ladder = [q for q in ms if q.strike_type.startswith(direction) and getattr(q, key) is not None]
-            ladder.sort(key=lambda q: float(getattr(q, key)))
-            for lo, hi in combinations(ladder, 2):
+            # A rung has only one bound; "less" markets with both bounds are single buckets.
+            other = "cap_strike" if key == "floor_strike" else "floor_strike"
+            rungs = [
+                q
+                for q in ms
+                if q.strike_type.startswith(direction) and getattr(q, key) is not None and getattr(q, other) is None
+            ]
+            pairs = [pair for ladder in _ladders(rungs, key) for pair in combinations(ladder, 2)]
+            for lo, hi in pairs:
                 if float(getattr(lo, key)) == float(getattr(hi, key)):
                     continue
                 # "above": YES on the lower strike, NO on the higher; "below": the reverse.

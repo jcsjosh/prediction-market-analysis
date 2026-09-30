@@ -81,6 +81,8 @@ def format_arbs(arbs: list[Arb], top: int) -> str:
         more = f" (+{len(a.legs) - 6} more)" if len(a.legs) > 6 else ""
         lines.append(
             f"[{tag}] {a.kind}: {a.title} — cost {a.cost_cents:.1f}¢, pays ≥ {a.min_payout_cents:.0f}¢, "
-            f"profit {a.profit_cents:.2f}¢/basket ({a.roi * 100:.2f}%)\n    {legs}{more}\n    {a.note}"
+            f"profit {a.profit_cents:.2f}¢/basket ({a.roi * 100:.2f}%)"
+            + (f", up to {a.max_baskets} baskets" if a.max_baskets is not None else "")
+            + f"\n    {legs}{more}\n    {a.note}"
         )
     return "\n".join(lines)

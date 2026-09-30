@@ -151,14 +151,105 @@ def test_ladder_arbitrage():
             "title": "High temp",
             "mutually_exclusive": False,
             "markets": [
-                market("T80", yes_ask=40, no_ask=62, strike_type="greater", floor_strike=80),
-                market("T85", yes_ask=50, no_ask=45, strike_type="greater", floor_strike=85),
+                market("KXHIGH-T80", yes_ask=40, no_ask=62, strike_type="greater", floor_strike=80),
+                market("KXHIGH-T85", yes_ask=50, no_ask=45, strike_type="greater", floor_strike=85),
             ],
         }
     )
     arbs = find_arbitrage([ev], FeeSchedule())
     assert [a.kind for a in arbs] == ["ladder-above"]
-    assert [(leg["ticker"], leg["side"]) for leg in arbs[0].legs] == [("T80", "yes"), ("T85", "no")]
+    assert [(leg["ticker"], leg["side"]) for leg in arbs[0].legs] == [("KXHIGH-T80", "yes"), ("KXHIGH-T85", "no")]
+
+
+def test_ladder_arbitrage_ignores_different_underlyings():
+    # Two pitchers' strikeout ladders in one game event: their lines are unrelated.
+    ev = Event.from_api(
+        {
+            "event_ticker": "KXMLBKS-GAME",
+            "title": "Strikeouts",
+            "mutually_exclusive": False,
+            "markets": [
+                market("KXMLBKS-GAME-PITCHERA-3", yes_ask=1, no_ask=99, strike_type="greater", floor_strike=2.5),
+                market("KXMLBKS-GAME-PITCHERB-4", yes_ask=99, no_ask=1, strike_type="greater", floor_strike=3.5),
+            ],
+        }
+    )
+    assert find_arbitrage([ev], FeeSchedule()) == []
+
+
+def test_ladder_arbitrage_ignores_other_team_in_same_event():
+    # Spread markets for both teams share one event; "BSU3" and "USU2" are different ladders.
+    ev = Event.from_api(
+        {
+            "event_ticker": "KXSPREAD-G",
+            "title": "Spread",
+            "mutually_exclusive": False,
+            "markets": [
+                market(
+                    "KXSPREAD-G-USU2",
+                    yes_ask=9,
+                    no_ask=93,
+                    strike_type="greater",
+                    floor_strike=1.5,
+                    custom_strike={"team": "usu"},
+                ),
+                market(
+                    "KXSPREAD-G-BSU3",
+                    yes_ask=91,
+                    no_ask=11,
+                    strike_type="greater",
+                    floor_strike=2.5,
+                    custom_strike={"team": "bsu"},
+                ),
+            ],
+        }
+    )
+    assert find_arbitrage([ev], FeeSchedule()) == []
+
+
+def test_arbitrage_reports_basket_capacity():
+    ev = Event.from_api(
+        {
+            "event_ticker": "KXHIGH",
+            "title": "High temp",
+            "markets": [
+                market("KXHIGH-T80", yes_ask=40, strike_type="greater", floor_strike=80, yes_ask_size_fp="25.00"),
+                market("KXHIGH-T85", yes_bid=55, strike_type="greater", floor_strike=85, yes_bid_size_fp="7.00"),
+            ],
+        }
+    )
+    (arb,) = find_arbitrage([ev], FeeSchedule())
+    assert arb.max_baskets == 7
+
+
+def test_bucket_markets_are_not_ladder_rungs():
+    # Kalshi labels exact-count buckets strike_type "less" with floor == cap.
+    ev = Event.from_api(
+        {
+            "event_ticker": "KXCOUNT",
+            "title": "How many?",
+            "markets": [
+                market("KXCOUNT-5.0", yes_ask=51, no_ask=53, strike_type="less", floor_strike=5, cap_strike=5),
+                market("KXCOUNT-9.0", yes_ask=2, no_ask=99, strike_type="less", floor_strike=9, cap_strike=9),
+            ],
+        }
+    )
+    assert find_arbitrage([ev], FeeSchedule()) == []
+
+
+def test_ladder_rungs_must_share_close_time():
+    later = (datetime.now(timezone.utc) + timedelta(days=900)).isoformat()
+    ev = Event.from_api(
+        {
+            "event_ticker": "USCLIMATE",
+            "title": "Climate goals",
+            "markets": [
+                market("USCLIMATE-2025", yes_ask=14, strike_type="less_or_equal", cap_strike=4909.9),
+                market("USCLIMATE-2030", yes_bid=17, strike_type="less_or_equal", cap_strike=3317.5, close_time=later),
+            ],
+        }
+    )
+    assert find_arbitrage([ev], FeeSchedule()) == []
 
 
 def test_no_arbitrage_when_fairly_priced():

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -50,6 +52,32 @@ def _tradeable(price: float | None) -> float | None:
     return price
 
 
+def _size(data: dict, *keys: str) -> float | None:
+    for key in keys:
+        raw = data.get(f"{key}_fp", data.get(key))
+        if raw not in (None, ""):
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _underlying(m: dict) -> str:
+    """Stable id for the quantity a strike market is written on.
+
+    Kalshi tickers end in a strike segment that may carry a team code (``...-BSU3`` and
+    ``...-USU2`` are different teams' spreads), and ``custom_strike`` names the team or
+    player. Markets on the same ladder share the ticker stem, the segment's letters and
+    the ``custom_strike``, and settle at the same time.
+    """
+    stem, _, last = m.get("ticker", "").rpartition("-")
+    letters = re.sub(r"[-\d.]+$", "", last)
+    custom = json.dumps(m.get("custom_strike") or {}, sort_keys=True)
+    # Different deadlines are different questions (e.g. "by 2025" vs "by 2030").
+    return f"{stem}|{letters}|{custom}|{m.get('close_time', '')}"
+
+
 @dataclass
 class Quote:
     ticker: str
@@ -69,6 +97,9 @@ class Quote:
     strike_type: str = ""
     floor_strike: float | None = None
     cap_strike: float | None = None
+    underlying: str = ""  # identifies one ladder when an event holds several (team, player)
+    yes_ask_size: float | None = None  # contracts offered at the YES ask
+    no_ask_size: float | None = None  # contracts offered at the NO ask (= resting YES bids)
 
     @classmethod
     def from_api(cls, m: dict, group: str = "") -> Quote:
@@ -104,6 +135,9 @@ class Quote:
             strike_type=m.get("strike_type", "") or "",
             floor_strike=m.get("floor_strike"),
             cap_strike=m.get("cap_strike"),
+            underlying=_underlying(m),
+            yes_ask_size=_size(m, "yes_ask_size") if yes_ask is not None else None,
+            no_ask_size=_size(m, "no_ask_size", "yes_bid_size") if no_ask is not None else None,
         )
 
     @property
