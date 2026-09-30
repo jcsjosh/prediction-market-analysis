@@ -3,8 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from simple_term_menu import TerminalMenu
-
 from src.common.analysis import Analysis
 from src.common.indexer import Indexer
 from src.common.util import package_data
@@ -59,6 +57,9 @@ def analyze(name: str | None = None):
         options.append(f"{snake_to_title(instance.name)}: {instance.description}")
     options.append("[Exit]")
 
+    # Imported here: simple-term-menu does not support Windows, and `edge` must not need it.
+    from simple_term_menu import TerminalMenu
+
     menu = TerminalMenu(
         options,
         title="Select an analysis to run (use arrow keys):",
@@ -106,6 +107,9 @@ def index():
         instance = indexer_cls()
         options.append(f"{snake_to_title(instance.name)}: {instance.description}")
     options.append("[Exit]")
+
+    # Imported here: simple-term-menu does not support Windows, and `edge` must not need it.
+    from simple_term_menu import TerminalMenu
 
     menu = TerminalMenu(
         options,
