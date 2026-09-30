@@ -84,7 +84,12 @@ def cmd_scan(args: argparse.Namespace) -> None:
     print(f"\nScanned {len(quotes)} markets in {len(events)} events · calibration: {cal.source}\n")
     print("ARBITRAGE (worst-case payout > cost, fees included)")
     print(format_arbs(arbs, args.top), "\n")
-    print(f"TOP {args.top} BETS (bankroll ${cfg.bankroll:,.0f}, {cfg.kelly_fraction:g}× Kelly, * = your view)")
+    plan = [i for i in ideas if i.in_plan]
+    print(
+        f"YOUR PLAN: {len(plan)} bets, ${sum(i.stake for i in plan):,.2f} staked of ${cfg.bankroll:,.0f}, "
+        f"expected profit ${sum(i.expected_profit for i in plan):,.2f} "
+        f"({cfg.kelly_fraction:g}× Kelly, one bet per event, * = your view). Top {args.top}:"
+    )
     print(format_table(ideas, args.top))
 
     paths = write_outputs(build_payload(ideas, arbs, cal, cfg, len(quotes)), args.out)
@@ -98,6 +103,7 @@ def cmd_calibrate(args: argparse.Namespace) -> None:
         markets_dir=args.markets_dir or data / "markets",
         by_group=not args.no_groups,
         since=args.since,
+        market_cap=args.market_cap,
     )
     path = table.save(args.out)
     prior = CalibrationTable.prior()
@@ -169,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--markets-dir")
     c.add_argument("--since", help="only use trades after this date, e.g. 2025-01-01")
     c.add_argument("--no-groups", action="store_true", help="skip per-category curves")
+    c.add_argument("--market-cap", type=int, default=1000, help="max contracts one event adds per price bucket")
     c.add_argument("--out", default=str(DEFAULT_CAL))
     c.set_defaults(func=cmd_calibrate)
 

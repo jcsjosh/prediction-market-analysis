@@ -110,6 +110,24 @@ def test_view_creates_edge_and_sizes_bet():
     assert 0 < idea.stake <= cfg.bankroll * cfg.max_bet_fraction
 
 
+def test_plan_keeps_one_bet_per_event_and_respects_bankroll():
+    quotes = [
+        Quote.from_api(market(f"KXTEST-{n}", yes_bid=39, yes_ask=40, event_ticker=f"EV{n // 2}")) for n in range(6)
+    ]
+    cfg = ScanConfig(
+        bankroll=100,
+        kelly_fraction=1.0,
+        max_bet_fraction=0.5,
+        views={q.ticker: 0.7 for q in quotes},
+        include_maker=False,
+    )
+    ideas = rank_ideas(quotes, CalibrationTable.prior(), FeeSchedule(), cfg)
+    assert len(ideas) == 3  # three events, one idea each
+    plan = [i for i in ideas if i.in_plan]
+    assert plan and sum(i.stake for i in plan) <= 100
+    assert len(plan) < len(ideas)  # each idea stakes ~$50, so the budget binds
+
+
 def test_fair_market_produces_no_ideas():
     q = Quote.from_api(market(yes_bid=49, yes_ask=51))
     assert rank_ideas([q], CalibrationTable.prior(), FeeSchedule(), ScanConfig(include_maker=False)) == []

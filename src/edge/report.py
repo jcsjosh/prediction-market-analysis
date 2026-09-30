@@ -58,6 +58,7 @@ def write_outputs(payload: dict, out_dir: Path | str) -> dict[str, Path]:
 def format_table(ideas: list[Idea], top: int) -> str:
     if not ideas:
         return "No bets clear the edge threshold right now. That is a valid answer - most markets are fairly priced."
+    ideas = [i for i in ideas if i.in_plan] or ideas
     header = f"{'#':>2}  {'Action':<28} {'Win%':>6} {'EV¢':>6} {'ROI':>6} {'Days':>6} {'Qty':>5} {'Stake$':>8} {'E[P]$':>7}  Market"
     lines = [header, "-" * len(header)]
     for n, i in enumerate(ideas[:top], 1):

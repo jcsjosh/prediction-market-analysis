@@ -27,6 +27,7 @@ class ScanConfig:
     arb_contracts: int = 100  # basket size used to price arbitrage fees
     views: dict[str, float] = field(default_factory=dict)  # ticker -> your YES probability
     view_weight: float = 1.0  # 1.0 = trust your view entirely, 0.5 = blend with calibration
+    max_total_fraction: float = 1.0  # the plan never stakes more than this share of bankroll
 
 
 @dataclass
@@ -54,6 +55,7 @@ class Idea:
     spread: float | None
     volume_24h: float
     source: str  # "calibration" or "your view"
+    in_plan: bool = False  # chosen for the bankroll-limited plan
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -162,16 +164,28 @@ def passes_filters(q: Quote, cfg: ScanConfig) -> bool:
 
 
 def rank_ideas(quotes: list[Quote], cal: CalibrationTable, fees: FeeSchedule, cfg: ScanConfig) -> list[Idea]:
-    """Best idea per market, ranked by expected dollar profit at the suggested size."""
+    """Best idea per event, ranked by expected dollar profit, with the plan marked.
+
+    Markets in one event share an outcome (one game, one day's temperature), so only the
+    best idea per event is kept. Walking down the ranking, ideas join the plan until the
+    total stake would pass ``max_total_fraction`` of the bankroll.
+    """
     best: dict[str, Idea] = {}
     for q in quotes:
         if not passes_filters(q, cfg):
             continue
         for idea in evaluate_quote(q, cal, fees, cfg):
-            cur = best.get(idea.ticker)
+            key = idea.event_ticker or idea.ticker
+            cur = best.get(key)
             if cur is None or idea.expected_profit > cur.expected_profit:
-                best[idea.ticker] = idea
-    return sorted(best.values(), key=lambda i: (i.expected_profit, i.roi), reverse=True)
+                best[key] = idea
+    ranked = sorted(best.values(), key=lambda i: (i.expected_profit, i.roi), reverse=True)
+    budget = cfg.bankroll * cfg.max_total_fraction
+    for idea in ranked:
+        if idea.stake <= budget:
+            idea.in_plan = True
+            budget -= idea.stake
+    return ranked
 
 
 # --- Arbitrage -------------------------------------------------------------------------

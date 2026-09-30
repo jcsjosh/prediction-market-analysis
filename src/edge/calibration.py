@@ -97,16 +97,19 @@ def build_from_dataset(
     trades_dir: Path | str,
     markets_dir: Path | str,
     by_group: bool = True,
-    min_group_contracts: int = 2_000_000,
-    strength: float = 50_000.0,
+    min_group_contracts: int = 200_000,
+    strength: float = 2_000.0,
     window: int = 1,
     since: str | None = None,
+    market_cap: int = 1_000,  # per event
 ) -> CalibrationTable:
     """Fit calibration curves on resolved Kalshi trades.
 
-    ``strength`` is measured in contracts: a price bucket needs far more than that many
-    contracts before its raw win rate dominates the prior. Contracts within one market are
-    highly correlated, so this is deliberately large.
+    Every contract in an event shares one underlying outcome: a primetime NFL game can hold
+    3% of all volume at a price, and one crash day settles dozens of index brackets at
+    once. Left alone, a few events decide the curve. Each event therefore counts for at
+    most ``market_cap`` contracts per side, role and price, split across its markets.
+    ``strength`` is the prior's weight in those capped contracts.
     """
     import duckdb
 
@@ -118,6 +121,7 @@ def build_from_dataset(
         f"""
         WITH resolved AS (
             SELECT
+                m.event_ticker AS event,
                 regexp_extract(m.event_ticker, '^([A-Za-z0-9]+)', 1) AS prefix,
                 t.taker_side, t.yes_price, t.no_price, t.count, m.result
             FROM '{Path(trades_dir)}/*.parquet' t
@@ -125,15 +129,26 @@ def build_from_dataset(
             WHERE m.result IN ('yes', 'no') AND t.yes_price BETWEEN 1 AND 99 {where_since}
         ),
         legs AS (
-            SELECT prefix, 'yes' AS side, CASE WHEN taker_side = 'yes' THEN 'taker' ELSE 'maker' END AS role,
+            SELECT event, prefix, 'yes' AS side, CASE WHEN taker_side = 'yes' THEN 'taker' ELSE 'maker' END AS role,
                    yes_price AS price, count, (result = 'yes') AS won FROM resolved
             UNION ALL
-            SELECT prefix, 'no' AS side, CASE WHEN taker_side = 'no' THEN 'taker' ELSE 'maker' END AS role,
+            SELECT event, prefix, 'no' AS side, CASE WHEN taker_side = 'no' THEN 'taker' ELSE 'maker' END AS role,
                    no_price AS price, count, (result = 'no') AS won FROM resolved
+        ),
+        per_outcome AS (
+            SELECT event, prefix, side, role, price, won, SUM(count)::DOUBLE AS c
+            FROM legs GROUP BY event, prefix, side, role, price, won
+        ),
+        per_market AS (
+            -- Split each event's capped weight across its outcomes in proportion to volume.
+            SELECT prefix, side, role, price, won,
+                   c / SUM(c) OVER w * LEAST(SUM(c) OVER w, {int(market_cap)}) AS n
+            FROM per_outcome
+            WINDOW w AS (PARTITION BY event, side, role, price)
         )
         SELECT prefix, side, role, price,
-               SUM(count)::DOUBLE AS n, SUM(CASE WHEN won THEN count ELSE 0 END)::DOUBLE AS w
-        FROM legs GROUP BY ALL
+               SUM(n) AS n, SUM(CASE WHEN won THEN n ELSE 0 END) AS w
+        FROM per_market GROUP BY ALL
         """
     ).df()
 

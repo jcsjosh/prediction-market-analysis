@@ -176,6 +176,7 @@ td .s { color: var(--ink-3); font: 11px var(--mono); }
         <h2>Ranked bets and arbitrage</h2>
       </div>
       <div class="filters" id="filters" hidden>
+        <label for="f-plan">Show<select id="f-plan"><option value="plan">Your plan</option><option value="">All ideas</option></select></label>
         <label for="f-group">Category<select id="f-group"><option value="">All</option></select></label>
         <label for="f-role">Order type<select id="f-role"><option value="">Both</option><option value="taker">Take</option><option value="maker">Limit</option></select></label>
         <label for="f-roi">Min ROI %<input type="number" id="f-roi" value="0" step="0.5"></label>
@@ -355,8 +356,8 @@ window.SCAN_DATA = null;
     renderTable();
   }
   function renderTable() {
-    const s = state.scan, g = $("f-group").value, r = $("f-role").value, minRoi = (+$("f-roi").value || 0) / 100;
-    const rows = s.ideas.filter((i) => (!g || i.group === g) && (!r || i.role === r) && i.roi >= minRoi);
+    const s = state.scan, planOnly = $("f-plan").value === "plan", g = $("f-group").value, r = $("f-role").value, minRoi = (+$("f-roi").value || 0) / 100;
+    const rows = s.ideas.filter((i) => (!planOnly || i.in_plan || !s.ideas.some((x) => x.in_plan)) && (!g || i.group === g) && (!r || i.role === r) && i.roi >= minRoi);
     const { key, dir } = state.sort;
     rows.sort((a, b) => { const va = a[key] ?? -Infinity, vb = b[key] ?? -Infinity; return (va > vb ? 1 : va < vb ? -1 : 0) * dir; });
     $("ideas").tHead.innerHTML = "<tr>" + COLS.map(([k, l, n]) => `<th class="${n ? "n" : ""}" data-k="${k}" ${k === key ? `aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""} tabindex="0">${l}${k === key ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + "</tr>";
@@ -371,7 +372,7 @@ window.SCAN_DATA = null;
       th.onclick = go; th.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
     });
   }
-  ["f-group", "f-role", "f-roi"].forEach((id) => $(id).addEventListener("input", () => state.scan && renderTable()));
+  ["f-plan", "f-group", "f-role", "f-roi"].forEach((id) => $(id).addEventListener("input", () => state.scan && renderTable()));
 
   function loadScan(data) {
     if (!data || !Array.isArray(data.ideas)) throw new Error("This file has no `ideas` list. Pick output/edge/scan.json from the scanner.");
