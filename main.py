@@ -135,7 +135,7 @@ def package():
 def main():
     if len(sys.argv) < 2:
         print("\nUsage: uv run main.py <command>")
-        print("Commands: analyze, index, package")
+        print("Commands: analyze, index, package, edge")
         sys.exit(0)
 
     command = sys.argv[1]
@@ -153,8 +153,14 @@ def main():
         package()
         sys.exit(0)
 
+    if command == "edge":
+        from src.edge.cli import main as edge_main
+
+        edge_main(sys.argv[2:])
+        sys.exit(0)
+
     print(f"Unknown command: {command}")
-    print("Commands: analyze, index, package")
+    print("Commands: analyze, index, package, edge")
     sys.exit(1)
 
 

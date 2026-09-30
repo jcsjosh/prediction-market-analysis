@@ -49,6 +49,28 @@ make analyze
 
 This opens an interactive menu to select which analysis to run. You can run all analyses or select a specific one. Output files (PNG, PDF, CSV, JSON) are saved to `output/`.
 
+### Kalshi Edge Finder
+
+Scan open Kalshi markets for bets with positive expected value after fees, and for arbitrage baskets:
+
+```bash
+uv run main.py edge scan --bankroll 1000          # rank live markets + arbitrage
+uv run main.py edge calibrate                     # fit win-rate curves on the dataset (after make setup)
+uv run main.py edge eval --side no --price 94     # price one bet by hand
+```
+
+How it scores a market:
+
+- **Calibration.** For every way into a market (take the YES/NO ask, or post a limit one cent above the bid), it looks up how often contracts bought at that price, by that role, actually won. `calibrate` fits these curves from resolved trades in the dataset, per category group. Until you run it, a conservative built-in prior is used (favourite-longshot bias, takers below makers, YES buyers below NO buyers).
+- **Fees.** Kalshi's `ceil(rate × C × P × (1−P))` fee is applied per order at the suggested size (7% taker, 0% maker by default; `--taker-fee`/`--maker-fee` to change).
+- **Sizing.** Fractional Kelly (`--kelly 0.25`), capped at 5% of bankroll per bet and 10% of the market's 24h volume.
+- **Your views.** `--views views.csv` (rows of `ticker,prob`) replaces the calibration estimate with your own YES probability for those markets. This is where most real edge comes from.
+- **Arbitrage.** Mutually exclusive events where buying every NO costs less than the guaranteed payout, and strike ladders where "above X" is priced below "above Y" for X < Y. Baskets that are only safe if an event's outcomes are exhaustive are flagged.
+
+Results print to the terminal and are saved to `output/edge/` as `scan.json`, `ideas.csv` and a self-contained `dashboard.html`.
+
+This is a research tool, not financial advice. Calibration edges are small and historical; check each market's rules and order book before trading.
+
 ### Packaging Data
 
 To compress the data directory for storage/distribution:
