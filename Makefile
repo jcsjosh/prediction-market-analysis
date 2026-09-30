@@ -1,4 +1,4 @@
-.PHONY: analyze run index package lint format test setup
+.PHONY: analyze run index package edge calibrate lint format test setup
 
 RUN = uv run main.py
 
@@ -13,6 +13,12 @@ index:
 
 package:
 	$(RUN) package
+
+edge:
+	$(RUN) edge scan $(filter-out $@,$(MAKECMDGOALS))
+
+calibrate:
+	$(RUN) edge calibrate
 
 lint:
 	uv run ruff check .
